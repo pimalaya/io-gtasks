@@ -22,15 +22,11 @@ This library is composed of 3 feature-gated layers:
 
 ## Features
 
-- **I/O-free coroutines**: no_std state machines with no sockets and no async runtime, resumable from any blocking, async or in-memory test harness.
-- **Tasks**: create, read, update and delete tasks, nest them under a parent, reorder them, move them to another list and hide the completed ones.
-- **Task lists**: create, read, rename and delete task lists.
-- **Patches that clear**: writable fields tell a field left alone from one explicitly cleared, so a patch only touches what it means to.
-- **Optimistic concurrency**: guard a task write with the etag it was read with, and get a precondition failure instead of overwriting a concurrent change.
-- **iCalendar projection** (requires `ical` feature): turn a task into a VTODO and a VTODO back into a task.
-- **Incremental sync**: pull only what changed since a given time, deletions included.
-- **Light client**: a standard, blocking client wrapping a stream you opened yourself.
-- **Full client** with **TLS** support: [Rustls](https://crates.io/crates/rustls) with ring crypto (`rustls-ring` feature, enabled by default) or aws crypto (`rustls-aws` feature), or [Native TLS](https://crates.io/crates/native-tls) (`native-tls` feature).
+- **Tasks and task lists**: create, edit, nest, reorder, move and delete tasks, and the lists holding them.
+- **Precise patches**: a write changes the fields it sets, clears the ones it nulls and leaves the rest alone.
+- **Conflict detection**: a task write guarded by its etag fails rather than overwrite a concurrent change.
+- **iCalendar** (`ical` feature): turn a task into a VTODO and a VTODO back into a task.
+- **Full client**: TLS via Rustls (`rustls-ring` default, `rustls-aws`) or Native TLS (`native-tls`).
 
 > [!TIP]
 > I/O Google Tasks is written in [Rust](https://www.rust-lang.org/) and uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate the client layers. The default feature set is declared in [Cargo.toml](./Cargo.toml) or on [docs.rs](https://docs.rs/crate/io-gtasks/latest/features).
