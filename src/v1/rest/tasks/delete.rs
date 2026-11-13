@@ -39,7 +39,7 @@ impl GtasksTaskDelete {
         trace!("task_id: {task_id:?}");
 
         let url = api_url(["lists", tasklist_id, "tasks", task_id])?;
-        let send = GtasksSend::delete_if_match(auth, url, if_match);
+        let send = GtasksSend::delete_if_match(auth, url, if_match)?;
 
         Ok(Self { send })
     }

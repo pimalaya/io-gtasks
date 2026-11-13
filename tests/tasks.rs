@@ -301,3 +301,32 @@ fn clears_the_completed_tasks_of_a_list() {
 
     assert_eq!(request_line(&request), "POST /tasks/v1/lists/list-1/clear");
 }
+
+#[test]
+fn reads_an_unknown_status_without_failing_the_page() {
+    let body =
+        r#"{"items":[{"id":"task-1","status":"inProgress"},{"id":"task-2","status":"completed"}]}"#;
+    let mut coroutine = GtasksTasksList::new(&auth(), "list-1", &Default::default()).unwrap();
+    let (_, ret) = expect_exchange(&mut coroutine, &json_response("200 OK", body));
+    let items = ret.unwrap().response.items;
+
+    assert_eq!(items.len(), 2);
+    assert_eq!(
+        items[0].status.as_option(),
+        Some(&GtasksTaskStatus::Unknown)
+    );
+    assert_eq!(
+        items[1].status.as_option(),
+        Some(&GtasksTaskStatus::Completed)
+    );
+}
+
+#[test]
+fn leaves_an_unknown_status_out_of_a_write() {
+    let task: GtasksTask =
+        serde_json::from_str(r#"{"title":"Buy milk","status":"inProgress"}"#).unwrap();
+    let mut coroutine = GtasksTaskUpdate::new(&auth(), "list-1", "task-1", &task, None).unwrap();
+    let (request, _) = expect_exchange(&mut coroutine, &json_response("200 OK", "{}"));
+
+    assert_eq!(request_body(&request), r#"{"title":"Buy milk"}"#);
+}

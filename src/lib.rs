@@ -52,7 +52,9 @@
 //! coroutine is a thin wrapper around one shared primitive,
 //! [`v1::send::GtasksSend`]: it builds the authorized request (bearer
 //! token, JSON in and out) and parses either the 2xx body or the Tasks
-//! error envelope into [`v1::send::GtasksSendError`]. Redirects are
+//! error envelope into [`v1::send::GtasksSendError`], whose
+//! [`v1::send::GtasksApiError`] keeps the reasons and the delay the
+//! server asked for, since the core cannot wait by itself. Redirects are
 //! never followed. The terminal [`v1::send::GtasksSendOutput`] carries
 //! the parsed response plus a keep-alive flag so pumps can reuse the
 //! connection across the many small requests a sync makes. Empty 2xx

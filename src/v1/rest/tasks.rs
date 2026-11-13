@@ -85,7 +85,7 @@ pub struct GtasksTask {
     #[serde(default, skip_serializing_if = "GtasksField::is_unset")]
     pub notes: GtasksField<String>,
     /// Status of the task.
-    #[serde(default, skip_serializing_if = "GtasksField::is_unset")]
+    #[serde(default, skip_serializing_if = "is_status_skipped")]
     pub status: GtasksField<GtasksTaskStatus>,
     /// Scheduled date of the task, as an RFC 3339 timestamp whose time
     /// is always midnight UTC: the API records the date alone and
@@ -124,6 +124,9 @@ pub enum GtasksTaskStatus {
     NeedsAction,
     /// The task is done.
     Completed,
+    /// A status this crate does not know, which a write leaves out.
+    #[serde(other)]
+    Unknown,
 }
 
 /// A link attached to a task.
@@ -195,4 +198,9 @@ pub struct GtasksSpaceInfo {
     /// The space, as `spaces/{space}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub space: Option<String>,
+}
+
+/// Whether a status stays out of a written body: unset or unknown.
+fn is_status_skipped(status: &GtasksField<GtasksTaskStatus>) -> bool {
+    status.is_unset() || status.as_option() == Some(&GtasksTaskStatus::Unknown)
 }

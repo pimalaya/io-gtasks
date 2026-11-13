@@ -61,6 +61,9 @@ const WEB_VIEW_LINK_PROP: &str = "X-GOOGLE-WEB-VIEW-LINK";
 impl GtasksTask {
     /// Projects a task onto a fresh VCALENDAR document holding one
     /// VTODO.
+    ///
+    /// `deleted` and `hidden` are not projected: a deleted task reads
+    /// like a live one, so the caller drops it first.
     pub fn to_ical(&self) -> String {
         let task = self;
         let mut vtodo = IcalCst::empty("VTODO");

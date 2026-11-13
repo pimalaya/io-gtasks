@@ -20,6 +20,10 @@ Behind the `ical` feature, `GtasksTask::to_ical` writes a task as an iCalendar d
 | `parent`      | `RELATED-TO;RELTYPE=PARENT`                 | both, read-only on the wire |
 | `webViewLink` | `X-GOOGLE-WEB-VIEW-LINK`                    | written only     |
 | `links`       | `LINK;VALUE=URI;LINKREL=related;LABEL=...` (RFC 9253 6.1) | written only |
+| `deleted`, `hidden` | none                                  | neither          |
+
+### Requirement: The projection leaves deleted and hidden to the caller
+`to_ical` SHALL project neither `deleted` nor `hidden`: a deleted task is written by its status like a live one, and dropping it before projecting is the caller's. A hidden task is a completed one and is written as `COMPLETED`. An unknown status SHALL be written as `NEEDS-ACTION`.
 
 ### Requirement: The way back is a patch of the mapped fields
 `from_ical` SHALL read the first VTODO of the document and return a task whose mapped writable fields (`title`, `notes`, `status`, `due`, `completed`) are set from the VTODO, or null when it lacks them, every other writable field unset. Sent as a patch, it SHALL replace what the projection manages, clear what the document dropped and leave the rest alone. Sent as an insert, the nulls are accepted.

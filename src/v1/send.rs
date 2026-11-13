@@ -5,9 +5,10 @@
 //!
 //! Tasks API reference: <https://developers.google.com/workspace/tasks/reference/rest>.
 
-use core::marker::PhantomData;
+use core::{marker::PhantomData, time::Duration};
 
 use alloc::{
+    format,
     string::{String, ToString},
     vec::Vec,
 };
@@ -23,6 +24,7 @@ use io_http::{
 };
 use log::{debug, trace};
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
+use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
@@ -60,37 +62,160 @@ pub enum GtasksSendError {
     /// The request URL could not be built.
     #[error("Tasks URL parsing failed: {0}")]
     ParseUrl(#[from] url::ParseError),
+    /// The request was refused before being sent.
+    #[error("Invalid Tasks request: {0}")]
+    InvalidRequest(String),
     /// Tasks returned a non-2xx status with its error envelope.
-    #[error("Tasks API returned HTTP {status}: {message}")]
-    Api {
-        /// The effective status code, from the envelope when present.
-        status: u16,
-        /// The error message, from the envelope or the raw body.
-        message: String,
-    },
+    #[error("{0}")]
+    Api(GtasksApiError),
     /// The server answered with a redirect, which is never followed.
     #[error("Tasks server returned an unexpected redirect")]
     UnexpectedRedirect,
 }
 
 impl GtasksSendError {
-    /// Returns the HTTP status code when the error is an API error.
-    pub fn status(&self) -> Option<u16> {
+    /// Returns the API error when Tasks answered with a non-2xx status.
+    pub fn api(&self) -> Option<&GtasksApiError> {
         match self {
-            Self::Api { status, .. } => Some(*status),
+            Self::Api(err) => Some(err),
             _ => None,
         }
     }
 
-    /// Whether the error is transient (429 or 5xx) and worth retrying.
+    /// Returns the HTTP status code when the error is an API error.
+    pub fn status(&self) -> Option<u16> {
+        self.api().map(|err| err.status)
+    }
+
+    /// Returns how long the server asked to wait before a retry
+    /// ([`GtasksApiError::retry_after`]).
+    pub fn retry_after(&self) -> Option<Duration> {
+        self.api().and_then(|err| err.retry_after)
+    }
+
+    /// Whether the error is an API error worth retrying later
+    /// ([`GtasksApiError::is_retryable`]).
     pub fn is_retryable(&self) -> bool {
-        matches!(self.status(), Some(429 | 500 | 502 | 503 | 504))
+        self.api().is_some_and(GtasksApiError::is_retryable)
+    }
+
+    /// Whether the error is a rate limit answer
+    /// ([`GtasksApiError::is_rate_limited`]).
+    pub fn is_rate_limited(&self) -> bool {
+        self.api().is_some_and(GtasksApiError::is_rate_limited)
+    }
+
+    /// Whether the target of the request does not exist (404).
+    pub fn is_not_found(&self) -> bool {
+        self.status() == Some(404)
     }
 
     /// Whether the error is a failed entity tag guard (412), meaning
     /// the task moved since the etag the write carried was read.
     pub fn is_precondition_failed(&self) -> bool {
         matches!(self.status(), Some(412))
+    }
+}
+
+/// The Tasks error envelope, read from a non-2xx answer.
+///
+/// Beside its code and message, the envelope lists reasons in
+/// `errors[]` and `details[]` and a canonical `status`: they are kept
+/// so callers match on codes rather than on the message text.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Error)]
+#[error("Tasks API returned HTTP {status}: {message}")]
+pub struct GtasksApiError {
+    /// The effective status code: `error.code` when present, the HTTP
+    /// status otherwise.
+    pub status: u16,
+    /// The error message, from the envelope or the raw body.
+    pub message: String,
+    /// The reasons of `error.errors[]`, in order, such as `notFound`,
+    /// `rateLimitExceeded`, `quotaExceeded` or `conditionNotMet`.
+    pub reasons: Vec<String>,
+    /// The canonical status of `error.status`, such as `NOT_FOUND`,
+    /// `PERMISSION_DENIED` or `RESOURCE_EXHAUSTED`.
+    pub google_status: Option<String>,
+    /// The reasons of `error.details[]` (`google.rpc.ErrorInfo`), such
+    /// as `RATE_LIMIT_EXCEEDED`.
+    pub detail_reasons: Vec<String>,
+    /// How long the server asked to wait before a retry: the
+    /// `Retry-After` header in its seconds form, else the delay of
+    /// `error.details[]` (`google.rpc.RetryInfo`).
+    pub retry_after: Option<Duration>,
+    /// Whether the server allows reusing the TCP/TLS connection.
+    pub keep_alive: bool,
+}
+
+impl GtasksApiError {
+    /// Reads the Tasks error envelope out of a non-2xx body, falling
+    /// back to the raw body as message.
+    ///
+    /// The body tells neither the `Retry-After` header nor the
+    /// connection reuse: the exchange fills those in.
+    pub fn parse(http_status: u16, body: &[u8]) -> Self {
+        let (status, message) = parse_api_error(http_status, body);
+        let mut err = Self {
+            status,
+            message,
+            ..Default::default()
+        };
+
+        if let Ok(envelope) = serde_json::from_slice::<ErrorEnvelope>(body) {
+            let error = envelope.error;
+            err.reasons = error.errors.into_iter().filter_map(|e| e.reason).collect();
+            err.google_status = error.status;
+            err.retry_after = error
+                .details
+                .iter()
+                .find_map(|d| d.retry_delay.as_ref()?.as_str().and_then(parse_delay));
+            err.detail_reasons = error.details.into_iter().filter_map(|d| d.reason).collect();
+        }
+
+        err
+    }
+
+    /// Whether `reason` is one of [`Self::reasons`] or
+    /// [`Self::detail_reasons`].
+    pub fn has_reason(&self, reason: &str) -> bool {
+        self.reasons
+            .iter()
+            .chain(&self.detail_reasons)
+            .any(|r| r == reason)
+    }
+
+    /// Whether Google throttled the request: a 429, a
+    /// `RESOURCE_EXHAUSTED` status, or a 403 whose reason is
+    /// `rateLimitExceeded`, `userRateLimitExceeded`, `quotaExceeded` or
+    /// `RATE_LIMIT_EXCEEDED`.
+    ///
+    /// The daily quota (`dailyLimitExceeded`) is not a rate limit:
+    /// waiting a minute does not lift it.
+    pub fn is_rate_limited(&self) -> bool {
+        if self.status == 429 || self.google_status.as_deref() == Some("RESOURCE_EXHAUSTED") {
+            return true;
+        }
+
+        self.status == 403
+            && [
+                "rateLimitExceeded",
+                "userRateLimitExceeded",
+                "quotaExceeded",
+                "RATE_LIMIT_EXCEEDED",
+            ]
+            .iter()
+            .any(|reason| self.has_reason(reason))
+    }
+
+    /// Whether the request is worth sending again later: rate limited
+    /// ([`Self::is_rate_limited`]) or a transient 5xx.
+    pub fn is_retryable(&self) -> bool {
+        self.is_rate_limited() || matches!(self.status, 500 | 502 | 503 | 504)
+    }
+
+    /// Whether the target of the request does not exist (404).
+    pub fn is_not_found(&self) -> bool {
+        self.status == 404
     }
 }
 
@@ -124,7 +249,11 @@ impl<T: DeserializeOwned> GtasksSend<T> {
     /// Builds a DELETE request guarded by an entity tag.
     ///
     /// See [`Self::with_guard`] for what the guard does.
-    pub fn delete_if_match(auth: &HttpAuthBearer, url: Url, if_match: Option<&str>) -> Self {
+    pub fn delete_if_match(
+        auth: &HttpAuthBearer,
+        url: Url,
+        if_match: Option<&str>,
+    ) -> Result<Self, GtasksSendError> {
         Self::with_guard(auth, "DELETE", url, None, Vec::new(), if_match)
     }
 
@@ -177,14 +306,7 @@ impl<T: DeserializeOwned> GtasksSend<T> {
         if_match: Option<&str>,
     ) -> Result<Self, GtasksSendError> {
         let body = serde_json::to_vec(body).map_err(GtasksSendError::SerializeRequest)?;
-        Ok(Self::with_guard(
-            auth,
-            "PUT",
-            url,
-            Some("application/json"),
-            body,
-            if_match,
-        ))
+        Self::with_guard(auth, "PUT", url, Some("application/json"), body, if_match)
     }
 
     /// Builds a PATCH request with the given value as JSON body.
@@ -214,14 +336,7 @@ impl<T: DeserializeOwned> GtasksSend<T> {
         if_match: Option<&str>,
     ) -> Result<Self, GtasksSendError> {
         let body = serde_json::to_vec(body).map_err(GtasksSendError::SerializeRequest)?;
-        Ok(Self::with_guard(
-            auth,
-            "PATCH",
-            url,
-            Some("application/json"),
-            body,
-            if_match,
-        ))
+        Self::with_guard(auth, "PATCH", url, Some("application/json"), body, if_match)
     }
 
     /// Builds a request with an arbitrary method, content type and body.
@@ -232,7 +347,7 @@ impl<T: DeserializeOwned> GtasksSend<T> {
         content_type: Option<&str>,
         body: Vec<u8>,
     ) -> Self {
-        Self::with_guard(auth, method, url, content_type, body, None)
+        Self::build(auth, method, url, content_type, body, None)
     }
 
     /// Builds a request with an arbitrary method, content type, body
@@ -243,7 +358,26 @@ impl<T: DeserializeOwned> GtasksSend<T> {
     /// moved underneath it; a stale tag comes back as HTTP 412. An
     /// absent guard overwrites unconditionally. Task writes honour it,
     /// task list writes ignore it.
+    ///
+    /// A guard holding a control character is refused: it would end
+    /// the header line it rides on.
     pub fn with_guard(
+        auth: &HttpAuthBearer,
+        method: &str,
+        url: Url,
+        content_type: Option<&str>,
+        body: Vec<u8>,
+        if_match: Option<&str>,
+    ) -> Result<Self, GtasksSendError> {
+        if if_match.is_some_and(|tag| tag.contains(|c: char| c.is_ascii_control())) {
+            let reason = "entity tag holds a control character";
+            return Err(GtasksSendError::InvalidRequest(reason.into()));
+        }
+
+        Ok(Self::build(auth, method, url, content_type, body, if_match))
+    }
+
+    fn build(
         auth: &HttpAuthBearer,
         method: &str,
         url: Url,
@@ -325,11 +459,13 @@ impl<T: DeserializeOwned> GtasksCoroutine for GtasksSend<T> {
                             )),
                         }
                     } else {
-                        let (status, message) = parse_api_error(*response.status, &response.body);
-                        GtasksCoroutineState::Complete(Err(GtasksSendError::Api {
-                            status,
-                            message,
-                        }))
+                        let mut err = GtasksApiError::parse(*response.status, &response.body);
+                        let delay = response.header("retry-after").and_then(parse_delay);
+
+                        err.retry_after = delay.or(err.retry_after);
+                        err.keep_alive = keep_alive;
+
+                        GtasksCoroutineState::Complete(Err(GtasksSendError::Api(err)))
                     }
                 }
             },
@@ -350,6 +486,21 @@ struct ErrorEnvelope {
 struct ErrorBody {
     code: Option<u16>,
     message: Option<String>,
+    #[serde(default)]
+    errors: Vec<ErrorItem>,
+    status: Option<String>,
+    #[serde(default)]
+    details: Vec<ErrorItem>,
+}
+
+/// An item of `error.errors[]` or `error.details[]`, of which only the
+/// reason and the retry delay are kept.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ErrorItem {
+    reason: Option<String>,
+    // NOTE: read loosely, so an unexpected shape cannot fail the envelope.
+    retry_delay: Option<Value>,
 }
 
 /// Parses the Tasks JSON error envelope, falling back to the raw body;
@@ -374,10 +525,30 @@ pub fn parse_api_error(http_status: u16, body: &[u8]) -> (u16, String) {
     }
 }
 
+/// Reads a delay in seconds: the `Retry-After` header (`120`) or the
+/// `retryDelay` of the envelope (`1.5s`). A date reads as none.
+fn parse_delay(value: &str) -> Option<Duration> {
+    let value = value.trim();
+    let value = value.strip_suffix('s').unwrap_or(value);
+    let (secs, frac) = value.split_once('.').unwrap_or((value, ""));
+
+    if secs.is_empty() || !secs.chars().chain(frac.chars()).all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+
+    let secs = secs.parse().ok()?;
+    let nanos = frac.bytes().chain([b'0'; 9]).take(9);
+    let nanos = nanos.fold(0, |nanos, digit| nanos * 10 + u32::from(digit - b'0'));
+
+    Some(Duration::new(secs, nanos))
+}
+
 /// Builds the URL of an API path from its segments.
 ///
 /// Each segment is percent-encoded on its own, so an identifier can
-/// never read as a path separator, a query or a scheme.
+/// never read as a path separator, a query or a scheme. A segment the
+/// URL would drop is refused: an empty one, `.`, `..`, or one holding a
+/// tab or a line break.
 pub(crate) fn api_url<'a>(
     segments: impl IntoIterator<Item = &'a str>,
 ) -> Result<Url, GtasksSendError> {
@@ -385,7 +556,16 @@ pub(crate) fn api_url<'a>(
 
     // NOTE: the base is hierarchical, so its path is always mutable.
     if let Ok(mut path) = url.path_segments_mut() {
-        path.pop_if_empty().extend(segments);
+        path.pop_if_empty();
+
+        for segment in segments {
+            if matches!(segment, "" | "." | "..") || segment.contains(['\t', '\n', '\r']) {
+                let reason = format!("path segment {segment:?} would not reach the server");
+                return Err(GtasksSendError::InvalidRequest(reason));
+            }
+
+            path.push(segment);
+        }
     }
 
     Ok(url)
