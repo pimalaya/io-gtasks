@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
 ### Added
 
 - Added the I/O-free coroutines for the whole Google Tasks API v1: task lists and tasks.
@@ -32,4 +34,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The VTODO read back is a patch of the fields the projection maps, clearing what the document dropped.
 - Added `GtasksClientStd`, a std blocking client behind the `client` feature.
 
-[unreleased]: https://github.com/pimalaya/io-gtasks/compare/root..HEAD
+[unreleased]: https://github.com/pimalaya/io-gtasks/compare/v0.1.0..HEAD
+[0.1.0]: https://github.com/pimalaya/io-gtasks/compare/root..v0.1.0
