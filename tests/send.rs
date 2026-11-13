@@ -8,13 +8,17 @@ mod common;
 use core::time::Duration;
 
 use common::*;
-use io_gtasks::v1::{
-    rest::{
-        tasklists::get::GtasksTaskListGet,
-        tasks::{delete::GtasksTaskDelete, get::GtasksTaskGet},
+use io_gtasks::{
+    coroutine::*,
+    v1::{
+        rest::{
+            tasklists::get::GtasksTaskListGet,
+            tasks::{delete::GtasksTaskDelete, get::GtasksTaskGet},
+        },
+        send::{GTASKS_API_BASE, GtasksApiError, GtasksSendError, parse_api_error},
     },
-    send::{GTASKS_API_BASE, GtasksApiError, GtasksSendError, parse_api_error},
 };
+use io_http::rfc6750::bearer::HttpAuthBearer;
 
 #[test]
 fn targets_the_versioned_api_base() {
@@ -260,6 +264,23 @@ fn refuses_an_entity_tag_holding_a_control_character() {
             "entity tag {tag:?} should be refused"
         );
     }
+}
+
+#[test]
+fn refuses_a_token_holding_a_line_break() {
+    let auth = HttpAuthBearer::new("fake-token\r\nX-Injected: 1");
+    let mut coroutine = GtasksTaskListGet::new(&auth, "@default").unwrap();
+
+    let err = match coroutine.resume(None) {
+        GtasksCoroutineState::Complete(Err(err)) => err,
+        state => panic!("expected a refusal before any write, got {state:?}"),
+    };
+
+    assert!(
+        matches!(err, GtasksSendError::InvalidRequest(_)),
+        "got: {err:?}"
+    );
+    assert!(!err.to_string().contains("X-Injected"), "got: {err}");
 }
 
 #[test]

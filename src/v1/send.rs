@@ -15,6 +15,7 @@ use alloc::{
 
 use io_http::{
     coroutine::*,
+    rfc3986::path::{HttpUrlBuildError, http_url_build},
     rfc6750::bearer::HttpAuthBearer,
     rfc9110::{
         request::HttpRequest,
@@ -405,7 +406,7 @@ impl<T: DeserializeOwned> GtasksSend<T> {
 
         debug!("prepare request to send");
         trace!("method: {method}");
-        trace!("url: {url}");
+        trace!("url: {}://{host}{}", url.scheme(), url.path());
         trace!("if_match: {if_match:?}");
 
         Self {
@@ -430,6 +431,10 @@ impl<T: DeserializeOwned> GtasksCoroutine for GtasksSend<T> {
                 }
                 HttpCoroutineState::Yielded(HttpSendYield::WantsRedirect { .. }) => {
                     GtasksCoroutineState::Complete(Err(GtasksSendError::UnexpectedRedirect))
+                }
+                HttpCoroutineState::Complete(Err(Http11SendError::InvalidRequest(err))) => {
+                    let err = GtasksSendError::InvalidRequest(err.to_string());
+                    GtasksCoroutineState::Complete(Err(err))
                 }
                 HttpCoroutineState::Complete(Err(err)) => {
                     GtasksCoroutineState::Complete(Err(err.into()))
@@ -552,21 +557,11 @@ fn parse_delay(value: &str) -> Option<Duration> {
 pub(crate) fn api_url<'a>(
     segments: impl IntoIterator<Item = &'a str>,
 ) -> Result<Url, GtasksSendError> {
-    let mut url = Url::parse(GTASKS_API_BASE)?;
-
-    // NOTE: the base is hierarchical, so its path is always mutable.
-    if let Ok(mut path) = url.path_segments_mut() {
-        path.pop_if_empty();
-
-        for segment in segments {
-            if matches!(segment, "" | "." | "..") || segment.contains(['\t', '\n', '\r']) {
-                let reason = format!("path segment {segment:?} would not reach the server");
-                return Err(GtasksSendError::InvalidRequest(reason));
-            }
-
-            path.push(segment);
+    http_url_build(GTASKS_API_BASE, segments).map_err(|err| match err {
+        HttpUrlBuildError::InvalidBaseUrl(err, _) => GtasksSendError::ParseUrl(err),
+        HttpUrlBuildError::InvalidSegment(segment) => {
+            let reason = format!("path segment {segment:?} would not reach the server");
+            GtasksSendError::InvalidRequest(reason)
         }
-    }
-
-    Ok(url)
+    })
 }

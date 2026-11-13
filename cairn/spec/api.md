@@ -24,6 +24,17 @@ A task list or task id SHALL be percent-encoded as one path segment, so an id ho
 - WHEN the request is built
 - THEN it is refused as an invalid request, where it used to send the listing of the task list
 
+### Requirement: A request that would split is refused
+A method or a header name that is not a token, and a header value holding a carriage return, a line feed or a NUL, SHALL fail the first resume with `GtasksSendError::InvalidRequest`, before any write. The bearer token is such a value: the error SHALL name the header and never its value.
+
+#### Scenario: A token holding a line break
+- GIVEN a bearer token ending in a line break followed by `X-Injected: 1`
+- WHEN the coroutine is first resumed
+- THEN it completes with an invalid request error and asks for no write
+
+### Requirement: The trace log leaves the query out
+The send path SHALL log the request URL as its scheme, host and path only.
+
 ### Requirement: An API error keeps what a caller backs off on
 `GtasksSendError::Api` SHALL carry a `GtasksApiError`: the effective status (`error.code`, else the HTTP status), the message, the reasons of `error.errors[]`, the canonical `error.status`, the reasons of `error.details[]`, the retry delay and whether the server allows reusing the connection. The retry delay SHALL be the `Retry-After` header in its seconds form, else the `retryDelay` of the envelope; a `Retry-After` date SHALL read as no delay, since the core has no clock to subtract from. `is_rate_limited` SHALL hold for a 429, for a `RESOURCE_EXHAUSTED` status and for a 403 whose reason is `rateLimitExceeded`, `userRateLimitExceeded`, `quotaExceeded` or `RATE_LIMIT_EXCEEDED`, and SHALL NOT hold for `dailyLimitExceeded`. `is_retryable` SHALL hold for a rate limit and for a 500, 502, 503 or 504.
 
