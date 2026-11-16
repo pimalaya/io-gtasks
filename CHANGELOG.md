@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: Changed the pimalaya-stream dependency to 0.4.
+
+  Its `tls::Tls`, the `tls` field of `GtasksClientStdConnectOptions`, moved the trusted certificate from `cert` to `server`, and gained `client`, the certificate presented when the server asks for one (mutual TLS).
+
+- **BREAKING**: Changed the io-http dependency to 0.8.
+
+  Its `HttpAuthBearer` is the credential every coroutine and `GtasksClientStd` take.
+
 ## [0.1.0] - 2026-11-13
 
 ### Added
