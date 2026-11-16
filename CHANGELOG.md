@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-16
+
+### Changed
+
+- Changed the jiff dependency to 1 and ical-rs to 0.7.1, behind the `ical` feature.
+
 ## [0.2.0] - 2026-11-16
 
 ### Changed
@@ -46,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The VTODO read back is a patch of the fields the projection maps, clearing what the document dropped.
 - Added `GtasksClientStd`, a std blocking client behind the `client` feature.
 
-[unreleased]: https://github.com/pimalaya/io-gtasks/compare/v0.2.0..HEAD
+[unreleased]: https://github.com/pimalaya/io-gtasks/compare/v0.2.1..HEAD
+[0.2.1]: https://github.com/pimalaya/io-gtasks/compare/v0.2.0..v0.2.1
 [0.2.0]: https://github.com/pimalaya/io-gtasks/compare/v0.1.0..v0.2.0
 [0.1.0]: https://github.com/pimalaya/io-gtasks/compare/root..v0.1.0
