@@ -4,9 +4,9 @@ Google Tasks API client library for Rust
 
 This library is composed of 3 feature-gated layers:
 
-- Low-level **I/O-free** coroutines: no_std-compatible state machines containing the whole Tasks API logic, usable anywhere
-- Mid-level **light client**: a standard, blocking client wrapping a stream you opened yourself
-- High-level **full client**: the light client plus TCP connections and TLS negotiations handled for you
+- Low-level **I/O-free** coroutines (`client` feature, enabled by default): no_std-compatible state machines containing the whole Tasks API logic, usable anywhere
+- Mid-level **light client** (`std` feature): a standard, blocking client wrapping a stream you opened yourself
+- High-level **full client** (a TLS feature, `rustls-ring` by default): the light client plus TCP connections and TLS negotiations handled for you
 
 ## Table of contents
 
@@ -26,6 +26,7 @@ This library is composed of 3 feature-gated layers:
 - **Precise patches**: a write changes the fields it sets, clears the ones it nulls and leaves the rest alone.
 - **Conflict detection**: a task write guarded by its etag fails rather than overwrite a concurrent change.
 - **iCalendar** (`ical` feature): turn a task into a VTODO and a VTODO back into a task.
+- **Light client**: a standard, blocking client wrapping a stream you opened yourself (requires `std` feature).
 - **Full client**: TLS via Rustls (`rustls-ring` default, `rustls-aws`) or Native TLS (`native-tls`).
 
 > [!TIP]

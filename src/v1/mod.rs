@@ -4,9 +4,11 @@
 //! sibling modules hold the transport primitive, the tri-state of the
 //! writable fields, the query serializer and the optional std client.
 
-#[cfg(feature = "client")]
+#[cfg(feature = "std")]
 pub mod client;
 pub mod field;
+#[cfg(feature = "client")]
 pub mod query;
 pub mod rest;
+#[cfg(feature = "client")]
 pub mod send;

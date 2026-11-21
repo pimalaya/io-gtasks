@@ -17,12 +17,13 @@ This repository follows [Cairn](https://github.com/pimalaya/cairn): a living spe
 
 ## Feature matrix
 
-io-gtasks follows the standard layered split (I/O-free coroutines, then the std client behind the `client` feature), plus the iCalendar projection and a vendored switch compiling the TLS dependencies from source:
+io-gtasks follows the standard layered split (no_std resource types, the I/O-free coroutines behind the `client` feature, then the std client behind the `std` feature, implying `client`), plus the iCalendar projection and a vendored switch compiling the TLS dependencies from source:
 
 ```sh
-cargo build --no-default-features                        # coroutines only, no std leak
-cargo build --no-default-features --features ical        # coroutines and the VTODO projection
-cargo build --no-default-features --features client      # light client, no TLS deps
+cargo build --no-default-features                        # resource types only, no std leak
+cargo build --no-default-features --features client      # coroutines, still no_std
+cargo build --no-default-features --features ical        # resource types and the VTODO projection
+cargo build --no-default-features --features std         # light client, no TLS deps
 cargo build                                              # full client (rustls-ring by default)
 cargo build --no-default-features --features rustls-aws  # full client, aws-lc-rs crypto
 cargo build --no-default-features --features native-tls  # full client, platform TLS

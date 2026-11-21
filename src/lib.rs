@@ -24,12 +24,14 @@
 //! The crate has two of the three standard Pimalaya layers; there is no
 //! CLI:
 //!
-//! 1. **I/O-free coroutines** (`no_std` core, always present): the whole
-//!    Tasks REST logic.
-//! 2. **Std client** ([`v1::client::GtasksClientStd`], `client`
-//!    feature): a blocking pump over any stream, with `connect` opening
-//!    the TCP/TLS connection itself behind a TLS feature (`rustls-ring`
-//!    by default, `rustls-aws`, `native-tls`).
+//! 1. **I/O-free coroutines** (`client` feature, on by default, `no_std`):
+//!    the whole Tasks REST logic. Without it the crate keeps the
+//!    `no_std` resource types and the `ical` projection.
+//! 2. **Std client** ([`v1::client::GtasksClientStd`], `std` feature,
+//!    implying `client`): a blocking pump over any stream, with
+//!    `connect` opening the TCP/TLS connection itself behind a TLS
+//!    feature (`rustls-ring` by default, `rustls-aws`, `native-tls`),
+//!    each implying `std`.
 //!
 //! The `ical` feature adds the iCalendar projection of a task onto a
 //! VTODO and back, in [`v1::rest::tasks::ical`].
@@ -174,8 +176,9 @@
 //! ```
 
 extern crate alloc;
-#[cfg(feature = "client")]
+#[cfg(feature = "std")]
 extern crate std;
 
+#[cfg(feature = "client")]
 pub mod coroutine;
 pub mod v1;

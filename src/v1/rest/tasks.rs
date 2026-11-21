@@ -16,15 +16,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::v1::field::GtasksField;
 
+#[cfg(feature = "client")]
 pub mod clear;
+#[cfg(feature = "client")]
 pub mod delete;
+#[cfg(feature = "client")]
 pub mod get;
 #[cfg(feature = "ical")]
 pub mod ical;
+#[cfg(feature = "client")]
 pub mod insert;
+#[cfg(feature = "client")]
 pub mod list;
+#[cfg(feature = "client")]
 pub mod r#move;
+#[cfg(feature = "client")]
 pub mod patch;
+#[cfg(feature = "client")]
 pub mod update;
 
 /// The tasks of a task list, one page of the listing.
